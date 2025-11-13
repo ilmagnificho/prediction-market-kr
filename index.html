@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>예측마켓 - 한국형 투표 플랫폼</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background: #f8f9fa;
+        }
+        
+        .vote-bar {
+            transition: width 0.3s ease;
+        }
+        
+        .comment-item {
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // 초기 샘플 데이터
+        const initialPolls = [
+            {
+                id: 1,
+                question: "2025년 코스피 3000 돌파할까?",
+                category: "경제",
+                yesVotes: 245,
+                noVotes: 189,
+                endDate: "2025-12-31",
+                comments: [
+                    { id: 1, author: "익명1", text: "금리 인하되면 가능할듯", time: "5분 전", likes: 12 },
+                    { id: 2, author: "익명2", text: "ㄴㄴ 미국 경기 둔화 오면 힘듦", time: "10분 전", likes: 8 }
+                ]
+            },
+            {
+                id: 2,
+                question: "손흥민 이번 시즌 20골 이상?",
+                category: "스포츠",
+                yesVotes: 412,
+                noVotes: 278,
+                endDate: "2025-05-31",
+                comments: [
+                    { id: 3, author: "축구팬", text: "폼 미쳤음 ㅇㅈ?", time: "1시간 전", likes: 34 }
+                ]
+            },
+            {
+                id: 3,
+                question: "올해 애플 폴더블 아이폰 출시?",
+                category: "테크",
+                yesVotes: 156,
+                noVotes: 523,
+                endDate: "2025-12-31",
+                comments: []
+            },
+            {
+                id: 4,
+                question: "서울 집값 연말까지 10% 이상 하락?",
+                category: "부동산",
+                yesVotes: 389,
+                noVotes: 412,
+                endDate: "2025-12-31",
+                comments: [
+                    { id: 4, author: "부린이", text: "금투세 폐지로 주식으로 몰릴듯", time: "30분 전", likes: 15 }
+                ]
+            }
+        ];
+
+        function App() {
+            const [polls, setPolls] = useState(() => {
+                const saved = localStorage.getItem('polls');
+                return saved ? JSON.parse(saved) : initialPolls;
+            });
+            const [currentView, setCurrentView] = useState('home');
+            const [selectedPoll, setSelectedPoll] = useState(null);
+            const [newPollQuestion, setNewPollQuestion] = useState('');
+            const [newPollCategory, setNewPollCategory] = useState('일반');
+            const [newPollEndDate, setNewPollEndDate] = useState('');
+            const [commentText, setCommentText] = useState('');
+            const [commentAuthor, setCommentAuthor] = useState('익명');
+
+            useEffect(() => {
+                localStorage.setItem('polls', JSON.stringify(polls));
+            }, [polls]);
+
+            const handleVote = (pollId, voteType) => {
+                setPolls(polls.map(poll => {
+                    if (poll.id === pollId) {
+                        if (voteType === 'yes') {
+                            return { ...poll, yesVotes: poll.yesVotes + 1 };
+                        } else {
+                            return { ...poll, noVotes: poll.noVotes + 1 };
+                        }
+                    }
+                    return poll;
+                }));
+            };
+
+            const addComment = (pollId) => {
+                if (!commentText.trim()) return;
+                
+                setPolls(polls.map(poll => {
+                    if (poll.id === pollId) {
+                        const newComment = {
+                            id: Date.now(),
+                            author: commentAuthor || '익명',
+                            text: commentText,
+                            time: '방금 전',
+                            likes: 0
+                        };
+                        return { ...poll, comments: [newComment, ...poll.comments] };
+                    }
+                    return poll;
+                }));
+                
+                setCommentText('');
+            };
+
+            const likeComment = (pollId, commentId) => {
+                setPolls(polls.map(poll => {
+                    if (poll.id === pollId) {
+                        return {
+                            ...poll,
+                            comments: poll.comments.map(comment => 
+                                comment.id === commentId 
+                                    ? { ...comment, likes: comment.likes + 1 }
+                                    : comment
+                            )
+                        };
+                    }
+                    return poll;
+                }));
+            };
+
+            const createPoll = () => {
+                if (!newPollQuestion.trim() || !newPollEndDate) {
+                    alert('질문과 종료일을 입력해주세요');
+                    return;
+                }
+
+                const newPoll = {
+                    id: Date.now(),
+                    question: newPollQuestion,
+                    category: newPollCategory,
+                    yesVotes: 0,
+                    noVotes: 0,
+                    endDate: newPollEndDate,
+                    comments: []
+                };
+
+                setPolls([newPoll, ...polls]);
+                setNewPollQuestion('');
+                setNewPollCategory('일반');
+                setNewPollEndDate('');
+                setCurrentView('home');
+            };
+
+            const viewPollDetail = (poll) => {
+                setSelectedPoll(poll);
+                setCurrentView('detail');
+            };
+
+            const PollCard = ({ poll }) => {
+                const totalVotes = poll.yesVotes + poll.noVotes;
+                const yesPercent = totalVotes > 0 ? (poll.yesVotes / totalVotes * 100).toFixed(1) : 50;
+                const noPercent = totalVotes > 0 ? (poll.noVotes / totalVotes * 100).toFixed(1) : 50;
+
+                return (
+                    <div 
+                        className="bg-white rounded-lg p-4 mb-3 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                        onClick={() => viewPollDetail(poll)}
+                    >
+                        <div className="flex items-start justify-between mb-2">
+                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full font-medium">
+                                {poll.category}
+                            </span>
+                            <span className="text-xs text-gray-500">~{poll.endDate}</span>
+                        </div>
+                        
+                        <h3 className="text-base font-bold mb-3 text-gray-800 leading-snug">
+                            {poll.question}
+                        </h3>
+                        
+                        <div className="space-y-2 mb-3">
+                            <div className="flex items-center">
+                                <span className="text-sm font-medium text-green-600 w-16">YES</span>
+                                <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+                                    <div 
+                                        className="vote-bar bg-gradient-to-r from-green-400 to-green-500 h-full flex items-center justify-end pr-2"
+                                        style={{ width: `${yesPercent}%` }}
+                                    >
+                                        <span className="text-xs font-bold text-white">{yesPercent}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="flex items-center">
+                                <span className="text-sm font-medium text-red-600 w-16">NO</span>
+                                <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+                                    <div 
+                                        className="vote-bar bg-gradient-to-r from-red-400 to-red-500 h-full flex items-center justify-end pr-2"
+                                        style={{ width: `${noPercent}%` }}
+                                    >
+                                        <span className="text-xs font-bold text-white">{noPercent}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>총 {totalVotes.toLocaleString()}명 참여</span>
+                            <span>💬 {poll.comments.length}개 댓글</span>
+                        </div>
+                    </div>
+                );
+            };
+
+            if (currentView === 'home') {
+                return (
+                    <div className="min-h-screen pb-20">
+                        {/* Header */}
+                        <div className="bg-white shadow-sm sticky top-0 z-10">
+                            <div className="max-w-md mx-auto px-4 py-4">
+                                <h1 className="text-2xl font-bold text-gray-800">🔮 예측마켓</h1>
+                                <p className="text-sm text-gray-600 mt-1">당신의 생각을 투표하세요</p>
+                            </div>
+                        </div>
+
+                        {/* Poll List */}
+                        <div className="max-w-md mx-auto px-4 py-4">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-lg font-bold text-gray-800">🔥 진행중인 투표</h2>
+                                <span className="text-sm text-gray-600">{polls.length}개</span>
+                            </div>
+                            
+                            {polls.map(poll => (
+                                <PollCard key={poll.id} poll={poll} />
+                            ))}
+                        </div>
+
+                        {/* Floating Action Button */}
+                        <button
+                            onClick={() => setCurrentView('create')}
+                            className="fixed bottom-6 right-6 w-14 h-14 btn-primary text-white rounded-full shadow-lg flex items-center justify-center text-2xl z-20"
+                        >
+                            +
+                        </button>
+                    </div>
+                );
+            }
+
+            if (currentView === 'create') {
+                return (
+                    <div className="min-h-screen bg-white">
+                        <div className="max-w-md mx-auto">
+                            {/* Header */}
+                            <div className="flex items-center justify-between p-4 border-b">
+                                <button 
+                                    onClick={() => setCurrentView('home')}
+                                    className="text-gray-600"
+                                >
+                                    ← 취소
+                                </button>
+                                <h2 className="text-lg font-bold">새 투표 만들기</h2>
+                                <button 
+                                    onClick={createPoll}
+                                    className="text-purple-600 font-bold"
+                                >
+                                    완료
+                                </button>
+                            </div>
+
+                            {/* Form */}
+                            <div className="p-4 space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        질문 *
+                                    </label>
+                                    <textarea
+                                        value={newPollQuestion}
+                                        onChange={(e) => setNewPollQuestion(e.target.value)}
+                                        placeholder="예: 2025년 비트코인 10만불 돌파할까?"
+                                        className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                        rows="3"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        카테고리
+                                    </label>
+                                    <select
+                                        value={newPollCategory}
+                                        onChange={(e) => setNewPollCategory(e.target.value)}
+                                        className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    >
+                                        <option>일반</option>
+                                        <option>경제</option>
+                                        <option>스포츠</option>
+                                        <option>테크</option>
+                                        <option>부동산</option>
+                                        <option>정치</option>
+                                        <option>연예</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        종료일 *
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={newPollEndDate}
+                                        onChange={(e) => setNewPollEndDate(e.target.value)}
+                                        className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    />
+                                </div>
+
+                                <div className="bg-purple-50 rounded-lg p-4 mt-6">
+                                    <h3 className="font-bold text-purple-900 mb-2">💡 투표 작성 팁</h3>
+                                    <ul className="text-sm text-purple-800 space-y-1">
+                                        <li>• YES/NO로 답변 가능한 질문이 좋아요</li>
+                                        <li>• 명확한 기준과 기한을 설정해주세요</li>
+                                        <li>• 논쟁적이고 재미있는 주제가 인기!</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (currentView === 'detail' && selectedPoll) {
+                const poll = polls.find(p => p.id === selectedPoll.id);
+                const totalVotes = poll.yesVotes + poll.noVotes;
+                const yesPercent = totalVotes > 0 ? (poll.yesVotes / totalVotes * 100).toFixed(1) : 50;
+                const noPercent = totalVotes > 0 ? (poll.noVotes / totalVotes * 100).toFixed(1) : 50;
+
+                return (
+                    <div className="min-h-screen bg-gray-50">
+                        <div className="max-w-md mx-auto bg-white min-h-screen">
+                            {/* Header */}
+                            <div className="sticky top-0 bg-white border-b z-10 p-4">
+                                <button 
+                                    onClick={() => setCurrentView('home')}
+                                    className="text-gray-600 mb-2"
+                                >
+                                    ← 뒤로
+                                </button>
+                            </div>
+
+                            {/* Poll Info */}
+                            <div className="p-4 border-b">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-medium">
+                                        {poll.category}
+                                    </span>
+                                    <span className="text-xs text-gray-500">마감: {poll.endDate}</span>
+                                </div>
+                                
+                                <h2 className="text-xl font-bold text-gray-800 mb-4 leading-tight">
+                                    {poll.question}
+                                </h2>
+
+                                {/* Vote Buttons */}
+                                <div className="grid grid-cols-2 gap-3 mb-4">
+                                    <button
+                                        onClick={() => handleVote(poll.id, 'yes')}
+                                        className="bg-gradient-to-r from-green-400 to-green-500 text-white font-bold py-4 rounded-lg shadow-md hover:shadow-lg transition-all"
+                                    >
+                                        <div className="text-2xl mb-1">✅</div>
+                                        <div>YES</div>
+                                    </button>
+                                    <button
+                                        onClick={() => handleVote(poll.id, 'no')}
+                                        className="bg-gradient-to-r from-red-400 to-red-500 text-white font-bold py-4 rounded-lg shadow-md hover:shadow-lg transition-all"
+                                    >
+                                        <div className="text-2xl mb-1">❌</div>
+                                        <div>NO</div>
+                                    </button>
+                                </div>
+
+                                {/* Results */}
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <span className="text-sm font-bold text-gray-700">실시간 결과</span>
+                                        <span className="text-sm text-gray-600">총 {totalVotes.toLocaleString()}명</span>
+                                    </div>
+                                    
+                                    <div className="space-y-3">
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="font-medium text-green-600">YES</span>
+                                                <span className="font-bold text-green-600">{yesPercent}%</span>
+                                            </div>
+                                            <div className="bg-gray-200 rounded-full h-3 overflow-hidden">
+                                                <div 
+                                                    className="vote-bar bg-gradient-to-r from-green-400 to-green-500 h-full"
+                                                    style={{ width: `${yesPercent}%` }}
+                                                />
+                                            </div>
+                                            <div className="text-xs text-gray-600 mt-1">{poll.yesVotes.toLocaleString()}명</div>
+                                        </div>
+                                        
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="font-medium text-red-600">NO</span>
+                                                <span className="font-bold text-red-600">{noPercent}%</span>
+                                            </div>
+                                            <div className="bg-gray-200 rounded-full h-3 overflow-hidden">
+                                                <div 
+                                                    className="vote-bar bg-gradient-to-r from-red-400 to-red-500 h-full"
+                                                    style={{ width: `${noPercent}%` }}
+                                                />
+                                            </div>
+                                            <div className="text-xs text-gray-600 mt-1">{poll.noVotes.toLocaleString()}명</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Comments Section */}
+                            <div className="p-4">
+                                <h3 className="text-lg font-bold text-gray-800 mb-4">
+                                    💬 댓글 {poll.comments.length}
+                                </h3>
+
+                                {/* Comment Input */}
+                                <div className="mb-4 bg-gray-50 rounded-lg p-3">
+                                    <input
+                                        type="text"
+                                        value={commentAuthor}
+                                        onChange={(e) => setCommentAuthor(e.target.value)}
+                                        placeholder="닉네임"
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 mb-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    />
+                                    <textarea
+                                        value={commentText}
+                                        onChange={(e) => setCommentText(e.target.value)}
+                                        placeholder="댓글을 입력하세요..."
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 mb-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                        rows="2"
+                                    />
+                                    <button
+                                        onClick={() => addComment(poll.id)}
+                                        className="w-full btn-primary text-white font-medium py-2 rounded-lg text-sm"
+                                    >
+                                        댓글 작성
+                                    </button>
+                                </div>
+
+                                {/* Comments List */}
+                                <div className="space-y-3">
+                                    {poll.comments.length === 0 ? (
+                                        <div className="text-center py-8 text-gray-500">
+                                            <div className="text-4xl mb-2">💭</div>
+                                            <div className="text-sm">첫 댓글을 작성해보세요!</div>
+                                        </div>
+                                    ) : (
+                                        poll.comments.map(comment => (
+                                            <div key={comment.id} className="comment-item border-b pb-3">
+                                                <div className="flex items-start justify-between mb-1">
+                                                    <span className="font-medium text-sm text-gray-800">
+                                                        {comment.author}
+                                                    </span>
+                                                    <span className="text-xs text-gray-500">{comment.time}</span>
+                                                </div>
+                                                <p className="text-sm text-gray-700 mb-2 leading-relaxed">
+                                                    {comment.text}
+                                                </p>
+                                                <button
+                                                    onClick={() => likeComment(poll.id, comment.id)}
+                                                    className="text-xs text-gray-500 hover:text-purple-600 transition-colors"
+                                                >
+                                                    👍 {comment.likes > 0 && comment.likes}
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return null;
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
