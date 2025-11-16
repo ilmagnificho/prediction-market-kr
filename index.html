@@ -51,7 +51,18 @@
             right: 0;
             max-width: 28rem; /* max-w-md */
             margin: 0 auto;
-            z-index: 50; /* 다른 요소 위에 오도록 z-index 추가 */
+            z-index: 50; 
+        }
+
+        /* Polymarket 스타일의 거래 탭 */
+        .trade-tab-active {
+            border-bottom: 3px solid #667eea;
+            color: #667eea;
+            font-weight: 700;
+        }
+        .trade-tab-inactive {
+            border-bottom: 1px solid #e5e7eb;
+            color: #6b7280;
         }
     </style>
 </head>
@@ -61,7 +72,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // 초기 샘플 데이터 (Votes -> Pool (코인 베팅액))
+        // --- 초기 데이터 (Pools는 유지하되 Price 개념 도입) ---
         const initialPolls = [
             {
                 id: 1,
@@ -108,131 +119,207 @@
             }
         ];
 
-        // 임시 리더보드 데이터
+        // --- 임시 리더보드 데이터 (게임 요소 유지) ---
         const fakeLeaderboard = [
             { id: 1, name: '예지력 마스터', coins: 1500000 },
             { id: 2, name: '정책 분석가', coins: 950000 },
             { id: 3, name: '경제의 신', coins: 720000 },
-            { id: 4, name: '촉이좋아', coins: 450000 },
-            { id: 5, name: '미래 관찰자', coins: 210000 },
         ];
-
-        // 초기 유저 데이터
-        const initialUser = { name: '초보 예언가', coins: 10000 };
         
-        // --- 1. 유저 및 재화(코인) 상태 관리 ---
+        // --- 유저 데이터 (positions 추가: 포트폴리오 관리를 위함) ---
+        const initialUser = { 
+            name: '초보 예언가', 
+            coins: 10000, 
+            positions: [] // { pollId: 1, yesCommit: 500, noCommit: 0 } 형태로 저장
+        };
+
+        // --- 유틸리티 함수 ---
+        // 풀 비율을 0~100 사이의 가격으로 계산 (Price = Probability)
+        const calculatePrice = (yesPool, noPool) => {
+            const total = yesPool + noPool;
+            if (total === 0) return 50; // 거래 없으면 50 코인 (50% 확률)
+            return Math.round((yesPool / total) * 100); // YES 가격
+        };
+
+        // --- App 컴포넌트 ---
         function App() {
-            
-            // Polls (챌린지) 상태 관리
+            // Polls 상태 관리 (이전과 동일)
             const [polls, setPolls] = useState(() => {
-                // --- 🚨 A. 1차 수정 (안정성 강화) ---
-                // 로컬 스토리지 데이터가 깨지거나 (try-catch)
-                // 데이터 구조가 맞지 않으면 (hasOwnProperty)
-                // 초기 데이터를 사용하도록 수정
                 try {
                     const saved = localStorage.getItem('polls');
                     if (saved) {
                         const parsedPolls = JSON.parse(saved);
-                        // 데이터가 배열이고, 첫 항목에 'yesPool' 키가 있는지 검사
                         if (Array.isArray(parsedPolls) && parsedPolls.length > 0 && parsedPolls[0].hasOwnProperty('yesPool')) {
                             return parsedPolls;
-                        } else if (Array.isArray(parsedPolls) && parsedPolls.length === 0) {
-                            return []; // 비어있는 것도 유효함
                         }
                     }
-                } catch (e) {
-                    console.error("Failed to load polls from localStorage, using initial data.", e);
-                    localStorage.removeItem('polls'); // 오류 발생 시 해당 키 삭제
-                }
-                // try가 실패하거나, 유효성 검사에 실패하면 초기 데이터 반환
+                } catch (e) { console.error("Polls load error", e); localStorage.removeItem('polls'); }
                 return initialPolls;
-                // --- A. 1차 수정 끝 ---
             });
             
-            // User (유저) 상태 관리
+            // User 상태 관리 (positions 필드 추가)
             const [user, setUser] = useState(() => {
-                // --- 🚨 A. 2차 수정 (안정성 강화) ---
-                // 유저 데이터도 동일하게 안정성 검사
                 try {
                     const savedUser = localStorage.getItem('user');
                     if (savedUser) {
                         const parsedUser = JSON.parse(savedUser);
-                        // 'coins' 키가 있는지 검사
                         if (parsedUser && parsedUser.hasOwnProperty('coins')) {
+                             // positions 필드가 없으면 빈 배열로 초기화 (하위 호환성 유지)
+                            if (!parsedUser.hasOwnProperty('positions')) {
+                                parsedUser.positions = []; 
+                            }
                             return parsedUser;
                         }
                     }
-                } catch (e)
-                {
-                    console.error("Failed to load user from localStorage, using initial data.", e);
-                    localStorage.removeItem('user'); // 오류 발생 시 해당 키 삭제
-                }
-                return initialUser; // 초기 유저 데이터 반환
-                // --- A. 2차 수정 끝 ---
+                } catch (e) { console.error("User load error", e); localStorage.removeItem('user'); }
+                return initialUser;
             });
 
             // 뷰 관리
-            const [currentView, setCurrentView] = useState('home'); // home, leaderboard, create, detail
+            const [currentView, setCurrentView] = useState('market'); // market(home), portfolio, create, detail
             const [selectedPoll, setSelectedPoll] = useState(null);
             
-            // 새 챌린지 생성 폼 상태
+            // 챌린지 생성 폼 상태는 이전과 동일
             const [newPollQuestion, setNewPollQuestion] = useState('');
             const [newPollCategory, setNewPollCategory] = useState('일반');
             const [newPollEndDate, setNewPollEndDate] = useState('');
             
-            // 댓글 폼 상태
             const [commentText, setCommentText] = useState('');
 
-            // Polls 데이터가 변경될 때마다 localStorage에 저장
-            useEffect(() => {
-                localStorage.setItem('polls', JSON.stringify(polls));
-            }, [polls]);
+            // LocalStorage 저장 효과 (polls와 user 모두 저장)
+            useEffect(() => { localStorage.setItem('polls', JSON.stringify(polls)); }, [polls]);
+            useEffect(() => { localStorage.setItem('user', JSON.stringify(user)); }, [user]);
 
-            // User 데이터가 변경될 때마다 localStorage에 저장
-            useEffect(() => {
-                localStorage.setItem('user', JSON.stringify(user));
-            }, [user]);
 
-            // --- 2. 핵심 기능 함수 (베팅, 댓글, 챌린지 생성) ---
+            // --- 3. 핵심 거래 함수 (BUY / SELL) ---
 
-            // '투표' 대신 '베팅' 기능
-            const handleBet = (pollId, voteType, amount, reason) => {
-                const betAmount = parseInt(amount, 10);
-                if (isNaN(betAmount) || betAmount <= 0) {
-                    alert('베팅할 코인 수량을 1 이상 입력해주세요.');
+            // '구매(BUY)' 함수 (코인 풀과 포지션에 코인 추가)
+            const handleTradeBuy = (pollId, tradeType, amount) => {
+                const tradeAmount = parseInt(amount, 10);
+                if (isNaN(tradeAmount) || tradeAmount <= 0) {
+                    alert('코인 수량을 1 이상 입력해주세요.');
                     return;
                 }
-                if (betAmount > user.coins) {
+                if (tradeAmount > user.coins) {
                     alert('보유 코인이 부족합니다.');
                     return;
                 }
 
                 // 1. 유저 코인 차감
-                setUser(prev => ({ ...prev, coins: prev.coins - betAmount }));
+                setUser(prev => ({ ...prev, coins: prev.coins - tradeAmount }));
 
                 // 2. 챌린지 풀(Pool)에 코인 추가
+                const isYesTrade = tradeType === 'yes';
                 setPolls(polls.map(poll => {
                     if (poll.id === pollId) {
-                        if (voteType === 'yes') {
-                            return { ...poll, yesPool: poll.yesPool + betAmount };
+                        if (isYesTrade) {
+                            return { ...poll, yesPool: poll.yesPool + tradeAmount };
                         } else {
-                            return { ...poll, noPool: poll.noPool + betAmount };
+                            return { ...poll, noPool: poll.noPool + tradeAmount };
                         }
                     }
                     return poll;
                 }));
 
-                // 3. (중요) 예측 근거를 댓글로 자동 추가
-                if (reason.trim()) {
-                    const reasonText = `[${voteType.toUpperCase()} 예측 근거] ${reason}`;
-                    addComment(pollId, reasonText, true); // (auto=true)
+                // 3. 유저 포지션 업데이트 (committedCoins 기록)
+                setUser(prev => {
+                    const existingPosition = prev.positions.find(p => p.pollId === pollId);
+                    
+                    if (existingPosition) {
+                        // 기존 포지션 업데이트
+                        const updatedPositions = prev.positions.map(p => {
+                            if (p.pollId === pollId) {
+                                return {
+                                    ...p,
+                                    yesCommit: p.yesCommit + (isYesTrade ? tradeAmount : 0),
+                                    noCommit: p.noCommit + (isYesTrade ? 0 : tradeAmount)
+                                };
+                            }
+                            return p;
+                        });
+                        return { ...prev, positions: updatedPositions };
+                    } else {
+                        // 새 포지션 생성
+                        const newPosition = {
+                            pollId: pollId,
+                            yesCommit: isYesTrade ? tradeAmount : 0,
+                            noCommit: isYesTrade ? 0 : tradeAmount,
+                            // entryPrice: [] // 복잡성 제거를 위해 entryPrice는 기록하지 않음
+                        };
+                        return { ...prev, positions: [...prev.positions, newPosition] };
+                    }
+                });
+
+                alert(`${tradeAmount.toLocaleString()} 코인으로 ${tradeType.toUpperCase()} 주식 구매 완료!`);
+            };
+
+            // '판매(SELL)' 함수 (커밋된 코인의 일부를 현재 가격으로 환수 시뮬레이션)
+            const handleTradeSell = (pollId, tradeType, amount) => {
+                const tradeAmount = parseInt(amount, 10);
+                if (isNaN(tradeAmount) || tradeAmount <= 0) {
+                    alert('코인 수량을 1 이상 입력해주세요.');
+                    return;
                 }
                 
-                // 베팅 후 상세페이지에 머무르도록 수정 (뷰 전환 제거)
-                alert(`${betAmount.toLocaleString()} 코인 ${voteType.toUpperCase()} 예측 완료!`);
+                const poll = polls.find(p => p.id === pollId);
+                const position = user.positions.find(p => p.pollId === pollId);
+
+                if (!poll || !position) {
+                    alert("잘못된 거래입니다.");
+                    return;
+                }
+
+                const isYesTrade = tradeType === 'yes';
+                const committed = isYesTrade ? position.yesCommit : position.noCommit;
+
+                if (tradeAmount > committed) {
+                    alert(`현재 커밋된 코인 (${committed.toLocaleString()} 코인) 이상을 판매할 수 없습니다.`);
+                    return;
+                }
+
+                const currentPrice = isYesTrade 
+                    ? calculatePrice(poll.yesPool, poll.noPool) 
+                    : 100 - calculatePrice(poll.yesPool, poll.noPool);
+                
+                // 환수할 코인: 판매량 * 현재 가격 / 100 (100 코인이 100% 가치)
+                const refundCoins = Math.round(tradeAmount * (currentPrice / 100)); 
+                const profitOrLoss = refundCoins - tradeAmount; // 수익/손실 시뮬레이션 (단순화된 방식)
+
+                // 1. 유저 코인 증가 (환수액 지급)
+                setUser(prev => ({ ...prev, coins: prev.coins + refundCoins }));
+
+                // 2. 챌린지 풀(Pool)에서 판매 코인만큼 차감
+                setPolls(polls.map(p => {
+                    if (p.id === pollId) {
+                        if (isYesTrade) {
+                            return { ...p, yesPool: p.yesPool - tradeAmount };
+                        } else {
+                            return { ...p, noPool: p.noPool - tradeAmount };
+                        }
+                    }
+                    return p;
+                }));
+
+                // 3. 유저 포지션 업데이트 (committedCoins 차감)
+                setUser(prev => {
+                    const updatedPositions = prev.positions.map(p => {
+                        if (p.pollId === pollId) {
+                            return {
+                                ...p,
+                                yesCommit: p.yesCommit - (isYesTrade ? tradeAmount : 0),
+                                noCommit: p.noCommit - (isYesTrade ? 0 : tradeAmount)
+                            };
+                        }
+                        return p;
+                    }).filter(p => p.yesCommit > 0 || p.noCommit > 0); // 0이 되면 포지션에서 제거
+
+                    return { ...prev, positions: updatedPositions };
+                });
+
+                alert(`${tradeAmount.toLocaleString()} 코인을 ${currentPrice} 코인 가격으로 판매 (환수액: ${refundCoins.toLocaleString()} 코인)`);
             };
-            
-            // 댓글 추가 기능 (handleBet에서도 호출)
+
+            // 기타 기능 (댓글, 보너스 등)은 이전과 동일
             const addComment = (pollId, text, isAuto = false) => {
                 if (!text.trim()) {
                     if(!isAuto) alert('댓글 내용을 입력해주세요.');
@@ -243,7 +330,7 @@
                     if (poll.id === pollId) {
                         const newComment = {
                             id: Date.now(),
-                            author: user.name, // 유저 이름으로 자동 입력
+                            author: user.name, 
                             text: text,
                             time: '방금 전',
                             likes: 0
@@ -253,27 +340,16 @@
                     return poll;
                 }));
                 
-                setCommentText(''); // 수동 댓글창 초기화
+                setCommentText(''); 
+            };
+            
+            const getDailyBonus = () => {
+                setUser(prev => ({ ...prev, coins: prev.coins + 1000 }));
+                alert('데일리 보너스 1,000 코인 획득! 🪙');
             };
 
-            const likeComment = (pollId, commentId) => {
-                setPolls(polls.map(poll => {
-                    if (poll.id === pollId) {
-                        return {
-                            ...poll,
-                            comments: poll.comments.map(comment => 
-                                comment.id === commentId 
-                                    ? { ...comment, likes: comment.likes + 1 }
-                                    : comment
-                            )
-                        };
-                    }
-                    return poll;
-                }));
-            };
-
-            // 챌린지(Poll) 생성
             const createPoll = () => {
+                // ... (생략: 이전 코드와 동일)
                 if (!newPollQuestion.trim() || !newPollEndDate) {
                     alert('질문과 종료일을 입력해주세요');
                     return;
@@ -283,7 +359,7 @@
                     id: Date.now(),
                     question: newPollQuestion,
                     category: newPollCategory,
-                    yesPool: 0, // 0 코인에서 시작
+                    yesPool: 0, 
                     noPool: 0,
                     endDate: newPollEndDate,
                     comments: []
@@ -293,29 +369,22 @@
                 setNewPollQuestion('');
                 setNewPollCategory('일반');
                 setNewPollEndDate('');
-                setCurrentView('home');
+                setCurrentView('market');
             };
-
-            // 데일리 보너스
-            const getDailyBonus = () => {
-                // TODO: 실제로는 24시간 제한 로직 필요
-                setUser(prev => ({ ...prev, coins: prev.coins + 1000 }));
-                alert('데일리 보너스 1,000 코인 획득! 🪙');
-            };
-
-            // 뷰 라우팅
+            
             const viewPollDetail = (poll) => {
                 setSelectedPoll(poll);
                 setCurrentView('detail');
             };
 
-            // --- 3. UI 컴포넌트 ---
+
+            // --- UI 컴포넌트 ---
             
-            // 챌린지 카드 (홈)
+            // 챌린지 카드 (마켓 화면) - '가격' 표시로 변경
             const PollCard = ({ poll }) => {
                 const totalPool = poll.yesPool + poll.noPool;
-                const yesPercent = totalPool > 0 ? (poll.yesPool / totalPool * 100).toFixed(1) : 50;
-                const noPercent = totalPool > 0 ? (poll.noPool / totalPool * 100).toFixed(1) : 50;
+                const yesPrice = calculatePrice(poll.yesPool, poll.noPool);
+                const noPrice = 100 - yesPrice;
 
                 return (
                     <div 
@@ -326,75 +395,64 @@
                             <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full font-medium">
                                 {poll.category}
                             </span>
-                            <span className="text-xs text-gray-500">~{poll.endDate}</span>
+                            <span className="text-xs text-gray-500">마감: {poll.endDate}</span>
                         </div>
                         
                         <h3 className="text-base font-bold mb-3 text-gray-800 leading-snug">
                             {poll.question}
                         </h3>
                         
-                        <div className="space-y-2 mb-3">
-                            <div className="flex items-center">
-                                <span className="text-sm font-medium text-green-600 w-16">YES</span>
-                                <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
-                                    <div 
-                                        className="vote-bar bg-gradient-to-r from-green-400 to-green-500 h-full flex items-center justify-end pr-2"
-                                        style={{ width: `${yesPercent}%` }}
-                                    >
-                                        <span className="text-xs font-bold text-white">{yesPercent}%</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div className="flex items-center">
-                                <span className="text-sm font-medium text-red-600 w-16">NO</span>
-                                <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
-                                    <div 
-                                        className="vote-bar bg-gradient-to-r from-red-400 to-red-500 h-full flex items-center justify-end pr-2"
-                                        style={{ width: `${noPercent}%` }}
-                                    >
-                                        <span className="text-xs font-bold text-white">{noPercent}%</span>
-                                    </div>
-                                </div>
+                        {/* --- 가격 표시 (Polymarket 스타일) --- */}
+                        <div className="flex justify-between items-center mb-3">
+                            <div className="text-sm font-medium text-gray-600">YES 주식 가격</div>
+                            <div className={`text-2xl font-extrabold ${yesPrice >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+                                {yesPrice} 코인
                             </div>
                         </div>
+
+                        <div className="flex items-center">
+                            <span className="text-xs font-medium text-green-600 w-8">YES</span>
+                            <div className="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
+                                <div 
+                                    className="vote-bar bg-gradient-to-r from-green-400 to-green-500 h-full"
+                                    style={{ width: `${yesPrice}%` }}
+                                ></div>
+                            </div>
+                            <span className="text-xs font-medium text-red-600 w-8 text-right">NO</span>
+                        </div>
                         
-                        <div className="flex items-center justify-between text-xs text-gray-500">
-                            <span>총 {totalPool.toLocaleString()} 코인 참여</span>
-                            <span>💬 {poll.comments.length}개 댓글</span>
+                        <div className="flex items-center justify-between text-xs text-gray-500 mt-2">
+                            <span>총 {totalPool.toLocaleString()} 코인 거래</span>
+                            <span>💬 {poll.comments.length}개 토론</span>
                         </div>
                     </div>
                 );
             };
 
-            // 홈 화면
-            const HomeScreen = () => (
-                <div className="min-h-screen pb-24"> {/* pb-20 -> pb-24 (하단바 고려) */}
-                    {/* Header */}
+            // 마켓 화면 (구: 홈 화면)
+            const MarketScreen = () => (
+                <div className="min-h-screen pb-24">
                     <div className="bg-white shadow-sm sticky top-0 z-10">
                         <div className="max-w-md mx-auto px-4 py-4">
                             <div className="flex justify-between items-center">
-                                <h1 className="text-2xl font-bold text-gray-800">🔮 인사이트 마켓</h1>
+                                <h1 className="text-2xl font-bold text-gray-800">🔮 예측 마켓</h1>
                                 <div className="text-right">
                                     <span className="font-bold text-purple-700">🪙 {user.coins.toLocaleString()}</span>
                                     <div className="text-xs text-gray-600">{user.name}</div>
                                 </div>
                             </div>
-                            <p className="text-sm text-gray-600 mt-1">미래를 예측하고 코인을 획득하세요!</p>
-                        </div>
-                    </div>
-
-                    {/* Poll List */}
-                    <div className="max-w-md mx-auto px-4 py-4">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-lg font-bold text-gray-800">🔥 진행중인 챌린지</h2>
+                            <p className="text-sm text-gray-600 mt-1">미래를 예측하고 거래 차익을 얻으세요!</p>
                             <button 
                                 onClick={getDailyBonus}
-                                className="text-xs bg-yellow-300 text-yellow-900 font-medium px-3 py-1 rounded-full hover:bg-yellow-400"
+                                className="text-xs bg-yellow-300 text-yellow-900 font-medium px-3 py-1 rounded-full hover:bg-yellow-400 mt-3"
                             >
                                 🎁 데일리 보너스
                             </button>
                         </div>
+                    </div>
+
+                    <div className="max-w-md mx-auto px-4 py-4">
+                        <h2 className="text-lg font-bold text-gray-800 mb-4">🔥 현재 거래 가능한 마켓</h2>
                         
                         {polls.map(poll => (
                             <PollCard key={poll.id} poll={poll} />
@@ -403,290 +461,99 @@
                 </div>
             );
 
-            // 챌린지 생성 화면
-            const CreatePollScreen = () => (
-                <div className="min-h-screen bg-white pb-24"> {/* pb-24 추가 */}
-                    <div className="max-w-md mx-auto">
-                        {/* Header */}
-                        <div className="flex items-center justify-center p-4 border-b relative">
-                            {/* <div className="w-16"></div>  */}
-                            <h2 className="text-lg font-bold">새 챌린지 만들기</h2>
-                            <button 
-                                onClick={createPoll}
-                                className="text-purple-600 font-bold absolute right-4"
-                            >
-                                완료
-                            </button>
-                        </div>
-
-                        {/* Form */}
-                        <div className="p-4 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">질문 *</label>
-                                <textarea
-                                    value={newPollQuestion}
-                                    onChange={(e) => setNewPollQuestion(e.target.value)}
-                                    placeholder="예: 2025년 비트코인 10만불 돌파할까?"
-                                    className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                    rows="3"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">카테고리</label>
-                                <select
-                                    value={newPollCategory}
-                                    onChange={(e) => setNewPollCategory(e.target.value)}
-                                    className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                >
-                                    <option>일반</option>
-                                    <option>경제</option>
-                                    <option>스포츠</option>
-                                    <option>테크</option>
-                                    <option>부동산</option>
-                                    <option>정치</option>
-                                    <option>연예</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">종료일 *</label>
-                                <input
-                                    type="date"
-                                    value={newPollEndDate}
-                                    onChange={(e) => setNewPollEndDate(e.target.value)}
-                                    className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                />
-                            </div>
-
-                            <div className="bg-purple-50 rounded-lg p-4 mt-6">
-                                <h3 className="font-bold text-purple-900 mb-2">💡 챌린지 작성 팁</h3>
-                                <ul className="text-sm text-purple-800 space-y-1">
-                                    <li>• YES/NO로 답변 가능한 질문이 좋아요</li>
-                                    <li>• 명확한 기준과 기한을 설정해주세요</li>
-                                    <li>• 논쟁적이고 재미있는 주제가 인기!</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-            
-            // 챌린지 상세 및 베팅 화면
-            const PollDetailScreen = () => {
-                // selectedPoll이 유효하지 않으면 렌더링 중단
-                if (!selectedPoll) {
-                    setCurrentView('home'); // 홈으로 강제 이동
-                    return null;
-                }
-
-                // polls 배열에서 최신 poll 정보를 찾음 (베팅/댓글 반영)
-                const poll = polls.find(p => p.id === selectedPoll.id);
-                
-                // 만약 poll이 삭제되거나 하면
-                if (!poll) {
-                    setCurrentView('home');
-                    return null;
-                }
-                
-                const totalPool = poll.yesPool + poll.noPool;
-                const yesPercent = totalPool > 0 ? (poll.yesPool / totalPool * 100).toFixed(1) : 50;
-                const noPercent = totalPool > 0 ? (poll.noPool / totalPool * 100).toFixed(1) : 50;
-                
-                // 베팅 금액, 예측 근거 상태
-                const [betAmount, setBetAmount] = useState(100);
-                const [betReason, setBetReason] = useState('');
-
-                return (
-                    <div className="min-h-screen bg-gray-50 pb-20">
-                        <div className="max-w-md mx-auto bg-white min-h-screen">
-                            {/* Header */}
-                            <div className="sticky top-0 bg-white border-b z-10 p-4">
-                                <button 
-                                    onClick={() => setCurrentView('home')}
-                                    className="text-gray-600 mb-2"
-                                >
-                                    ← 뒤로
-                                </button>
-                            </div>
-
-                            {/* Poll Info */}
-                            <div className="p-4 border-b">
-                                <div className="flex items-center justify-between mb-3">
-                                    <span className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-medium">
-                                        {poll.category}
-                                    </span>
-                                    <span className="text-xs text-gray-500">마감: {poll.endDate}</span>
-                                </div>
-                                
-                                <h2 className="text-xl font-bold text-gray-800 mb-4 leading-tight">
-                                    {poll.question}
-                                </h2>
-
-                                {/* --- 4. 베팅 UI (핵심 개선) --- */}
-                                <div className="bg-gray-50 rounded-lg p-4 space-y-3 mb-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">베팅할 코인</label>
-                                        <input
-                                            type="number"
-                                            value={betAmount}
-                                            onChange={(e) => setBetAmount(e.target.value)}
-                                            className="w-full border border-gray-300 rounded-lg p-2 text-center font-bold text-lg"
-                                        />
-                                        <div className="text-xs text-gray-600 text-right mt-1">
-                                            보유 코인: {user.coins.toLocaleString()} 🪙
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">예측 근거 (선택)</label>
-                                        <textarea
-                                            value={betReason}
-                                            onChange={(e) => setBetReason(e.target.value)}
-                                            placeholder="예측 근거를 공유하면 커뮤니티에 도움이 됩니다."
-                                            className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                            rows="2"
-                                        />
-                                    </div>
-
-                                    {/* Bet Buttons */}
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <button
-                                            onClick={() => handleBet(poll.id, 'yes', betAmount, betReason)}
-                                            className="bg-gradient-to-r from-green-400 to-green-500 text-white font-bold py-3 rounded-lg shadow-md hover:shadow-lg transition-all text-sm"
-                                        >
-                                            ✅ YES에 {parseInt(betAmount || 0).toLocaleString()} 코인 예측
-                                        </button>
-                                        <button
-                                            onClick={() => handleBet(poll.id, 'no', betAmount, betReason)}
-                                            className="bg-gradient-to-r from-red-400 to-red-500 text-white font-bold py-3 rounded-lg shadow-md hover:shadow-lg transition-all text-sm"
-                                        >
-                                            ❌ NO에 {parseInt(betAmount || 0).toLocaleString()} 코인 예측
-                                        </button>
-                                    </div>
-                                </div>
-                                
-                                {/* Results */}
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <div className="flex justify-between items-center mb-3">
-                                        <span className="text-sm font-bold text-gray-700">실시간 예측 풀</span>
-                                        <span className="text-sm text-gray-600">총 {totalPool.toLocaleString()} 코인</span>
-                                    </div>
-                                    
-                                    <div className="space-y-3">
-                                        <div>
-                                            <div className="flex justify-between text-sm mb-1">
-                                                <span className="font-medium text-green-600">YES</span>
-                                                <span className="font-bold text-green-600">{yesPercent}%</span>
-                                            </div>
-                                            <div className="bg-gray-200 rounded-full h-3 overflow-hidden">
-                                                <div 
-                                                    className="vote-bar bg-gradient-to-r from-green-400 to-green-500 h-full"
-                                                    style={{ width: `${yesPercent}%` }}
-                                                />
-                                            </div>
-                                            <div className="text-xs text-gray-600 mt-1">{poll.yesPool.toLocaleString()} 코인</div>
-                                        </div>
-                                        
-                                        <div>
-                                            <div className="flex justify-between text-sm mb-1">
-                                                <span className="font-medium text-red-600">NO</span>
-                                                <span className="font-bold text-red-600">{noPercent}%</span>
-                                            </div>
-                                            <div className="bg-gray-200 rounded-full h-3 overflow-hidden">
-                                                <div 
-                                                    className="vote-bar bg-gradient-to-r from-red-400 to-red-500 h-full"
-                                                    style={{ width: `${noPercent}%` }}
-                                                />
-                                            </div>
-                                            <div className="text-xs text-gray-600 mt-1">{poll.noPool.toLocaleString()} 코인</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Comments Section */}
-                            <div className="p-4">
-                                <h3 className="text-lg font-bold text-gray-800 mb-4">
-                                    💬 근거 및 토론 {poll.comments.length}
-                                </h3>
-
-                                {/* Comment Input (수동 입력) */}
-                                <div className="mb-4 bg-gray-50 rounded-lg p-3">
-                                    <div className="text-sm font-medium mb-2">{user.name} (으)로 댓글 달기:</div>
-                                    <textarea
-                                        value={commentText}
-                                        onChange={(e) => setCommentText(e.target.value)}
-                                        placeholder="자유로운 의견을 남겨주세요..."
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 mb-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                        rows="2"
-                                    />
-                                    <button
-                                        onClick={() => addComment(poll.id, commentText, false)}
-                                        className="w-full btn-primary text-white font-medium py-2 rounded-lg text-sm"
-                                    >
-                                        댓글 작성
-                                    </button>
-                                </div>
-
-                                {/* Comments List */}
-                                <div className="space-y-3">
-                                    {poll.comments.length === 0 ? (
-                                        <div className="text-center py-8 text-gray-500">
-                                            <div className="text-4xl mb-2">💭</div>
-                                            <div className="text-sm">첫 댓글을 작성해보세요!</div>
-                                        </div>
-                                    ) : (
-                                        poll.comments.map(comment => (
-                                            <div key={comment.id} className="comment-item border-b pb-3">
-                                                <div className="flex items-start justify-between mb-1">
-                                                    <span className="font-medium text-sm text-gray-800">
-                                                        {comment.author}
-                                                    </span>
-                                                    <span className="text-xs text-gray-500">{comment.time}</span>
-                                                </div>
-                                                <p className="text-sm text-gray-700 mb-2 leading-relaxed whitespace-pre-wrap">
-                                                    {comment.text}
-                                                </p>
-                                                <button
-                                                    onClick={() => likeComment(poll.id, comment.id)}
-                                                    className="text-xs text-gray-500 hover:text-purple-600 transition-colors"
-                                                >
-                                                    👍 {comment.likes > 0 && comment.likes}
-                                                </button>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                );
-            };
-
-            // 랭킹 (리더보드) 화면
-            const LeaderboardScreen = () => {
+            // 내 포지션 화면 (구: 랭킹 화면)
+            const PortfolioScreen = () => {
                 const myRank = { id: 'my', name: `${user.name} (나)`, coins: user.coins };
-                const sortedLeaderboard = [...fakeLeaderboard, myRank]
-                    .sort((a, b) => b.coins - a.coins);
+                const sortedLeaderboard = [...fakeLeaderboard, myRank].sort((a, b) => b.coins - a.coins);
                 
-                const myRankIndex = sortedLeaderboard.findIndex(u => u.id === 'my');
+                const currentPositions = user.positions.map(pos => {
+                    const poll = polls.find(p => p.id === pos.pollId);
+                    if (!poll) return null;
+
+                    const yesPrice = calculatePrice(poll.yesPool, poll.noPool);
+                    const noPrice = 100 - yesPrice;
+
+                    const yesValue = pos.yesCommit * (yesPrice / 100); // 현재 가치
+                    const noValue = pos.noCommit * (noPrice / 100);
+
+                    // 포트폴리오 화면에는 매수 단가를 모르므로, 단순화된 수익률만 표시
+                    // 여기서는 커밋한 코인 (원금) 대비 현재 가치로 손익을 시뮬레이션
+                    const yesProfit = yesValue - pos.yesCommit;
+                    const noProfit = noValue - pos.noCommit;
+
+                    return {
+                        ...pos,
+                        question: poll.question,
+                        yesPrice,
+                        noPrice,
+                        yesValue,
+                        noValue,
+                        yesProfit,
+                        noProfit
+                    };
+                }).filter(p => p !== null);
+
+                const totalPortfolioValue = currentPositions.reduce((sum, p) => sum + p.yesValue + p.noValue, 0);
 
                 return (
-                    <div className="min-h-screen pb-24"> {/* pb-24 추가 */}
-                        {/* Header */}
+                    <div className="min-h-screen pb-24">
                         <div className="bg-white shadow-sm sticky top-0 z-10">
                             <div className="max-w-md mx-auto px-4 py-4">
-                                <h1 className="text-2xl font-bold text-gray-800">🏆 명예의 전당</h1>
-                                <p className="text-sm text-gray-600 mt-1">최고의 예지력을 증명하세요!</p>
+                                <h1 className="text-2xl font-bold text-gray-800">💼 내 포지션</h1>
+                                <p className="text-sm text-gray-600 mt-1">총 자산: <span className="font-bold text-purple-700">🪙 {(user.coins + totalPortfolioValue).toLocaleString()}</span></p>
                             </div>
                         </div>
 
-                        {/* Leaderboard List */}
                         <div className="max-w-md mx-auto px-4 py-4">
+                            <h2 className="text-lg font-bold text-gray-800 mb-4">나의 보유 현황</h2>
+                            {currentPositions.length === 0 ? (
+                                <div className="text-center py-8 text-gray-500 bg-white rounded-lg shadow-sm">
+                                    <div className="text-4xl mb-2">📉</div>
+                                    <div className="text-sm">보유 중인 주식이 없습니다. 마켓에서 구매해보세요!</div>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {currentPositions.map(p => (
+                                        <div key={p.pollId} className="bg-white p-4 rounded-lg shadow-md border-l-4 border-purple-500">
+                                            <h3 className="font-bold text-gray-800 mb-2">{p.question}</h3>
+                                            
+                                            {p.yesCommit > 0 && (
+                                                <div className="flex justify-between text-sm py-1 border-b">
+                                                    <span className="font-medium text-green-600">✅ YES 주식</span>
+                                                    <span>커밋: {p.yesCommit.toLocaleString()} 코인</span>
+                                                    <span className="font-bold text-gray-800">현재가: {p.yesPrice} 코인</span>
+                                                    <span className={`font-bold ${p.yesProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                        {p.yesProfit >= 0 ? '▲' : '▼'} {p.yesProfit.toLocaleString()}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {p.noCommit > 0 && (
+                                                <div className="flex justify-between text-sm py-1">
+                                                    <span className="font-medium text-red-600">❌ NO 주식</span>
+                                                    <span>커밋: {p.noCommit.toLocaleString()} 코인</span>
+                                                    <span className="font-bold text-gray-800">현재가: {p.noPrice} 코인</span>
+                                                    <span className={`font-bold ${p.noProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                        {p.noProfit >= 0 ? '▲' : '▼'} {p.noProfit.toLocaleString()}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <button 
+                                                onClick={() => viewPollDetail(polls.find(poll => poll.id === p.pollId))}
+                                                className="mt-3 w-full text-xs text-purple-600 font-medium py-1 border border-purple-300 rounded hover:bg-purple-50"
+                                            >
+                                                거래 화면으로 이동
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* 리더보드는 포트폴리오 화면 하단에 배치 (게임 요소 유지) */}
+                            <h2 className="text-lg font-bold text-gray-800 mt-8 mb-4">🏆 코인 부자 랭킹</h2>
                             {sortedLeaderboard.map((u, index) => (
                                 <div 
                                     key={u.id}
-                                    className={`flex items-center justify-between p-4 mb-2 rounded-lg ${u.id === 'my' ? 'bg-purple-100 border-2 border-purple-500' : 'bg-white shadow-sm'}`}
+                                    className={`flex items-center justify-between p-3 mb-2 rounded-lg ${u.id === 'my' ? 'bg-purple-100 border-2 border-purple-500' : 'bg-white shadow-sm'}`}
                                 >
                                     <div className="flex items-center">
                                         <span className="text-lg font-bold w-10">
@@ -703,23 +570,267 @@
                     </div>
                 );
             };
-            
+
+            // 챌린지 상세 및 거래 화면 (Trade Widget 도입)
+            const PollDetailScreen = () => {
+                // ... (생략: 유효성 검사)
+                if (!selectedPoll) { setCurrentView('market'); return null; }
+                const poll = polls.find(p => p.id === selectedPoll.id);
+                if (!poll) { setCurrentView('market'); return null; }
+
+                // 가격 계산
+                const yesPrice = calculatePrice(poll.yesPool, poll.noPool);
+                const noPrice = 100 - yesPrice;
+                const totalPool = poll.yesPool + poll.noPool;
+
+                // 포지션 데이터
+                const position = user.positions.find(p => p.pollId === poll.id) || { yesCommit: 0, noCommit: 0 };
+
+                // 거래 위젯 상태
+                const [tradeTab, setTradeTab] = useState('buy'); // buy or sell
+                const [tradeType, setTradeType] = useState('yes'); // yes or no
+                const [tradeAmount, setTradeAmount] = useState(100);
+
+                const currentPrice = tradeType === 'yes' ? yesPrice : noPrice;
+                const committedCoins = tradeType === 'yes' ? position.yesCommit : position.noCommit;
+
+                // 구매 시 예상 비용 (amount만큼 코인을 풀에 넣으므로, 단순 amount)
+                const estimatedCost = tradeAmount; 
+                // 판매 시 예상 환수액 (판매 수량 * 현재 가격 / 100)
+                const estimatedRefund = Math.round(tradeAmount * (currentPrice / 100));
+
+                return (
+                    <div className="min-h-screen bg-gray-50 pb-20">
+                        <div className="max-w-md mx-auto bg-white min-h-screen">
+                            {/* Header */}
+                            <div className="sticky top-0 bg-white border-b z-10 p-4">
+                                <button onClick={() => setCurrentView('market')} className="text-gray-600 mb-2">← 마켓으로</button>
+                            </div>
+
+                            {/* Poll Info */}
+                            <div className="p-4 border-b">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-medium">{poll.category}</span>
+                                    <span className="text-xs text-gray-500">마감: {poll.endDate}</span>
+                                </div>
+                                <h2 className="text-xl font-bold text-gray-800 mb-4 leading-tight">{poll.question}</h2>
+
+                                {/* --- 거래 위젯 (Trade Widget) --- */}
+                                <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+                                    {/* 1. Buy / Sell 탭 */}
+                                    <div className="flex border-b border-gray-300">
+                                        <button 
+                                            onClick={() => setTradeTab('buy')}
+                                            className={`flex-1 text-sm py-2 transition-colors ${tradeTab === 'buy' ? 'trade-tab-active' : 'trade-tab-inactive'}`}
+                                        >구매 (BUY)</button>
+                                        <button 
+                                            onClick={() => setTradeTab('sell')}
+                                            className={`flex-1 text-sm py-2 transition-colors ${tradeTab === 'sell' ? 'trade-tab-active' : 'trade-tab-inactive'}`}
+                                        >판매 (SELL)</button>
+                                    </div>
+                                    
+                                    {/* 2. Yes / No 주식 선택 */}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            onClick={() => setTradeType('yes')}
+                                            className={`py-3 rounded-lg font-bold border-2 ${tradeType === 'yes' ? 'bg-green-100 border-green-500 text-green-700' : 'bg-white border-gray-300 text-gray-600'}`}
+                                        >✅ YES ({yesPrice} 코인)</button>
+                                        <button
+                                            onClick={() => setTradeType('no')}
+                                            className={`py-3 rounded-lg font-bold border-2 ${tradeType === 'no' ? 'bg-red-100 border-red-500 text-red-700' : 'bg-white border-gray-300 text-gray-600'}`}
+                                        >❌ NO ({noPrice} 코인)</button>
+                                    </div>
+
+                                    {/* 3. 수량 입력 */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">거래 코인 수량</label>
+                                        <input
+                                            type="number"
+                                            value={tradeAmount}
+                                            onChange={(e) => setTradeAmount(e.target.value)}
+                                            className="w-full border border-gray-300 rounded-lg p-2 text-center font-bold text-lg"
+                                        />
+                                    </div>
+
+                                    {/* 4. 거래 정보 요약 */}
+                                    <div className="text-sm space-y-1 pt-2 border-t border-gray-200">
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-600">현재 가격:</span>
+                                            <span className="font-bold text-purple-700">{currentPrice} 코인</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-600">{tradeTab === 'buy' ? '예상 비용:' : '환수할 코인:'}</span>
+                                            <span className="font-bold text-gray-800">
+                                                {tradeTab === 'buy' ? estimatedCost.toLocaleString() : estimatedRefund.toLocaleString()} 코인
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-600">보유 코인 / {tradeType.toUpperCase()} 커밋 코인:</span>
+                                            <span className="font-bold">{user.coins.toLocaleString()} / {committedCoins.toLocaleString()} 코인</span>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* 5. 최종 거래 버튼 */}
+                                    {tradeTab === 'buy' ? (
+                                        <button
+                                            onClick={() => handleTradeBuy(poll.id, tradeType, tradeAmount)}
+                                            className="w-full bg-green-500 text-white font-bold py-3 rounded-lg shadow-md hover:bg-green-600 transition-all"
+                                        >
+                                            {tradeType.toUpperCase()} 주식 {tradeAmount.toLocaleString()} 코인 구매하기
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => handleTradeSell(poll.id, tradeType, tradeAmount)}
+                                            className="w-full bg-red-500 text-white font-bold py-3 rounded-lg shadow-md hover:bg-red-600 transition-all"
+                                            disabled={tradeAmount > committedCoins}
+                                        >
+                                            {tradeType.toUpperCase()} 주식 {tradeAmount.toLocaleString()} 코인 판매하기
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            
+                            {/* 시장 현황 (Market Overview) */}
+                            <div className="p-4 border-b">
+                                <h3 className="text-lg font-bold text-gray-800 mb-3">시장 현황</h3>
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <span className="text-sm font-bold text-gray-700">총 거래액 (Total Pool)</span>
+                                        <span className="text-sm text-gray-600">🪙 {totalPool.toLocaleString()} 코인</span>
+                                    </div>
+                                    
+                                    <div className="space-y-3">
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="font-medium text-green-600">✅ YES 가격</span>
+                                                <span className="font-bold text-green-600">{yesPrice} 코인</span>
+                                            </div>
+                                            <div className="bg-gray-200 rounded-full h-3 overflow-hidden">
+                                                <div 
+                                                    className="vote-bar bg-gradient-to-r from-green-400 to-green-500 h-full"
+                                                    style={{ width: `${yesPrice}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                        
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="font-medium text-red-600">❌ NO 가격</span>
+                                                <span className="font-bold text-red-600">{noPrice} 코인</span>
+                                            </div>
+                                            <div className="bg-gray-200 rounded-full h-3 overflow-hidden">
+                                                <div 
+                                                    className="vote-bar bg-gradient-to-r from-red-400 to-red-500 h-full"
+                                                    style={{ width: `${noPrice}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* 토론 섹션 (Discussion) */}
+                            <div className="p-4">
+                                <h3 className="text-lg font-bold text-gray-800 mb-4">
+                                    💬 근거 및 토론 {poll.comments.length}
+                                </h3>
+
+                                <div className="mb-4 bg-gray-50 rounded-lg p-3">
+                                    <div className="text-sm font-medium mb-2">{user.name} (으)로 댓글 달기:</div>
+                                    <textarea
+                                        value={commentText}
+                                        onChange={(e) => setCommentText(e.target.value)}
+                                        placeholder="거래 근거 및 의견을 남겨주세요..."
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 mb-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                        rows="2"
+                                    />
+                                    <button
+                                        onClick={() => addComment(poll.id, commentText, false)}
+                                        className="w-full btn-primary text-white font-medium py-2 rounded-lg text-sm"
+                                    >
+                                        토론 참여
+                                    </button>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {poll.comments.length === 0 ? (
+                                        <div className="text-center py-8 text-gray-500">
+                                            <div className="text-4xl mb-2">💭</div>
+                                            <div className="text-sm">첫 토론을 시작해보세요!</div>
+                                        </div>
+                                    ) : (
+                                        poll.comments.map(comment => (
+                                            <div key={comment.id} className="comment-item border-b pb-3">
+                                                <div className="flex items-start justify-between mb-1">
+                                                    <span className="font-medium text-sm text-gray-800">
+                                                        {comment.author}
+                                                    </span>
+                                                    <span className="text-xs text-gray-500">{comment.time}</span>
+                                                </div>
+                                                <p className="text-sm text-gray-700 mb-2 leading-relaxed whitespace-pre-wrap">
+                                                    {comment.text}
+                                                </p>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // 챌린지 생성 화면 (이전과 동일)
+            const CreatePollScreen = () => (
+                <div className="min-h-screen bg-white pb-24">
+                    <div className="max-w-md mx-auto">
+                        <div className="flex items-center justify-center p-4 border-b relative">
+                            <h2 className="text-lg font-bold">새 마켓 만들기</h2>
+                            <button 
+                                onClick={createPoll}
+                                className="text-purple-600 font-bold absolute right-4"
+                            >
+                                완료
+                            </button>
+                        </div>
+                        <div className="p-4 space-y-4">
+                            <div><label className="block text-sm font-medium text-gray-700 mb-2">질문 *</label>
+                                <textarea value={newPollQuestion} onChange={(e) => setNewPollQuestion(e.target.value)} placeholder="예: 2025년 비트코인 10만불 돌파할까?" className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500" rows="3"/>
+                            </div>
+                            <div><label className="block text-sm font-medium text-gray-700 mb-2">카테고리</label>
+                                <select value={newPollCategory} onChange={(e) => setNewPollCategory(e.target.value)} className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500">
+                                    <option>일반</option><option>경제</option><option>스포츠</option><option>테크</option><option>부동산</option><option>정치</option><option>연예</option>
+                                </select>
+                            </div>
+                            <div><label className="block text-sm font-medium text-gray-700 mb-2">종료일 *</label>
+                                <input type="date" value={newPollEndDate} onChange={(e) => setNewPollEndDate(e.target.value)} className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"/>
+                            </div>
+                            <div className="bg-purple-50 rounded-lg p-4 mt-6">
+                                <h3 className="font-bold text-purple-900 mb-2">💡 마켓 작성 팁</h3>
+                                <ul className="text-sm text-purple-800 space-y-1"><li>• YES/NO로 답변 가능한 질문이 좋아요</li><li>• 명확한 기준과 기한을 설정해주세요</li><li>• 논쟁적이고 재미있는 주제가 인기!</li></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+
+
             // 하단 탭 네비게이션
             const BottomNav = () => (
                 <div className="bottom-nav grid grid-cols-3 gap-1 bg-white shadow-inner border-t p-2">
                     <button
-                        onClick={() => setCurrentView('home')}
-                        className={`p-2 rounded-lg flex flex-col items-center ${currentView === 'home' ? 'text-purple-600' : 'text-gray-500'}`}
+                        onClick={() => setCurrentView('market')}
+                        className={`p-2 rounded-lg flex flex-col items-center ${currentView === 'market' ? 'text-purple-600' : 'text-gray-500'}`}
                     >
-                        <span className="text-2xl">🏠</span>
-                        <span className="text-xs font-medium">홈</span>
+                        <span className="text-2xl">📈</span>
+                        <span className="text-xs font-medium">마켓</span>
                     </button>
                     <button
-                        onClick={() => setCurrentView('leaderboard')}
-                        className={`p-2 rounded-lg flex flex-col items-center ${currentView === 'leaderboard' ? 'text-purple-600' : 'text-gray-500'}`}
+                        onClick={() => setCurrentView('portfolio')}
+                        className={`p-2 rounded-lg flex flex-col items-center ${currentView === 'portfolio' ? 'text-purple-600' : 'text-gray-500'}`}
                     >
-                        <span className="text-2xl">🏆</span>
-                        <span className="text-xs font-medium">랭킹</span>
+                        <span className="text-2xl">💰</span>
+                        <span className="text-xs font-medium">내 포지션</span>
                     </button>
                     <button
                         onClick={() => setCurrentView('create')}
@@ -734,12 +845,11 @@
             // --- 4. 메인 렌더링 ---
             return (
                 <div className="max-w-md mx-auto">
-                    {currentView === 'home' && <HomeScreen />}
-                    {currentView === 'leaderboard' && <LeaderboardScreen />}
+                    {currentView === 'market' && <MarketScreen />}
+                    {currentView === 'portfolio' && <PortfolioScreen />}
                     {currentView === 'create' && <CreatePollScreen />}
                     {currentView === 'detail' && <PollDetailScreen />}
                     
-                    {/* 상세 뷰(detail)가 아닐 때만 하단 네비게이션을 보여줍니다. */}
                     {currentView !== 'detail' && <BottomNav />}
                 </div>
             );
