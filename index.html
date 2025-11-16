@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>예측마켓 - 한국형 투표 플랫폼</title>
+    <title>인사이트 마켓 - 미래 예측 챌린지</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -42,6 +42,16 @@
         .btn-primary:hover {
             opacity: 0.9;
         }
+
+        /* 하단 네비게이션 고정 */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            max-width: 28rem; /* max-w-md */
+            margin: 0 auto;
+        }
     </style>
 </head>
 <body>
@@ -50,37 +60,37 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // 초기 샘플 데이터
+        // 초기 샘플 데이터 (Votes -> Pool (코인 베팅액))
         const initialPolls = [
             {
                 id: 1,
                 question: "2025년 코스피 3000 돌파할까?",
                 category: "경제",
-                yesVotes: 245,
-                noVotes: 189,
+                yesPool: 245000,
+                noPool: 189000,
                 endDate: "2025-12-31",
                 comments: [
-                    { id: 1, author: "익명1", text: "금리 인하되면 가능할듯", time: "5분 전", likes: 12 },
-                    { id: 2, author: "익명2", text: "ㄴㄴ 미국 경기 둔화 오면 힘듦", time: "10분 전", likes: 8 }
+                    { id: 1, author: "익명1", text: "[YES 예측 근거] 금리 인하되면 가능할듯", time: "5분 전", likes: 12 },
+                    { id: 2, author: "익명2", text: "[NO 예측 근거] ㄴㄴ 미국 경기 둔화 오면 힘듦", time: "10분 전", likes: 8 }
                 ]
             },
             {
                 id: 2,
                 question: "손흥민 이번 시즌 20골 이상?",
                 category: "스포츠",
-                yesVotes: 412,
-                noVotes: 278,
+                yesPool: 412000,
+                noPool: 278000,
                 endDate: "2025-05-31",
                 comments: [
-                    { id: 3, author: "축구팬", text: "폼 미쳤음 ㅇㅈ?", time: "1시간 전", likes: 34 }
+                    { id: 3, author: "축구팬", text: "[YES 예측 근거] 폼 미쳤음 ㅇㅈ?", time: "1시간 전", likes: 34 }
                 ]
             },
             {
                 id: 3,
                 question: "올해 애플 폴더블 아이폰 출시?",
                 category: "테크",
-                yesVotes: 156,
-                noVotes: 523,
+                yesPool: 15600,
+                noPool: 52300,
                 endDate: "2025-12-31",
                 comments: []
             },
@@ -88,54 +98,106 @@
                 id: 4,
                 question: "서울 집값 연말까지 10% 이상 하락?",
                 category: "부동산",
-                yesVotes: 389,
-                noVotes: 412,
+                yesPool: 389000,
+                noPool: 412000,
                 endDate: "2025-12-31",
                 comments: [
-                    { id: 4, author: "부린이", text: "금투세 폐지로 주식으로 몰릴듯", time: "30분 전", likes: 15 }
+                    { id: 4, author: "부린이", text: "[NO 예측 근거] 금리 동결이라 더 안떨어질듯", time: "30분 전", likes: 15 }
                 ]
             }
         ];
 
+        // 임시 리더보드 데이터
+        const fakeLeaderboard = [
+            { id: 1, name: '예지력 마스터', coins: 1500000 },
+            { id: 2, name: '정책 분석가', coins: 950000 },
+            { id: 3, name: '경제의 신', coins: 720000 },
+            { id: 4, name: '촉이좋아', coins: 450000 },
+            { id: 5, name: '미래 관찰자', coins: 210000 },
+        ];
+        
+        // --- 1. 유저 및 재화(코인) 상태 관리 ---
         function App() {
+            // Polls (챌린지) 상태 관리
             const [polls, setPolls] = useState(() => {
                 const saved = localStorage.getItem('polls');
                 return saved ? JSON.parse(saved) : initialPolls;
             });
-            const [currentView, setCurrentView] = useState('home');
+            
+            // User (유저) 상태 관리
+            const [user, setUser] = useState(() => {
+                const savedUser = localStorage.getItem('user');
+                return savedUser ? JSON.parse(savedUser) : { name: '초보 예언가', coins: 10000 };
+            });
+
+            // 뷰 관리
+            const [currentView, setCurrentView] = useState('home'); // home, leaderboard, create, detail
             const [selectedPoll, setSelectedPoll] = useState(null);
+            
+            // 새 챌린지 생성 폼 상태
             const [newPollQuestion, setNewPollQuestion] = useState('');
             const [newPollCategory, setNewPollCategory] = useState('일반');
             const [newPollEndDate, setNewPollEndDate] = useState('');
+            
+            // 댓글 폼 상태
             const [commentText, setCommentText] = useState('');
-            const [commentAuthor, setCommentAuthor] = useState('익명');
 
+            // Polls 데이터가 변경될 때마다 localStorage에 저장
             useEffect(() => {
                 localStorage.setItem('polls', JSON.stringify(polls));
             }, [polls]);
 
-            const handleVote = (pollId, voteType) => {
+            // User 데이터가 변경될 때마다 localStorage에 저장
+            useEffect(() => {
+                localStorage.setItem('user', JSON.stringify(user));
+            }, [user]);
+
+            // --- 2. 핵심 기능 함수 (베팅, 댓글, 챌린지 생성) ---
+
+            // '투표' 대신 '베팅' 기능
+            const handleBet = (pollId, voteType, amount, reason) => {
+                const betAmount = parseInt(amount, 10);
+                if (!betAmount || betAmount <= 0) {
+                    alert('베팅할 코인 수량을 입력해주세요.');
+                    return;
+                }
+                if (betAmount > user.coins) {
+                    alert('보유 코인이 부족합니다.');
+                    return;
+                }
+
+                // 1. 유저 코인 차감
+                setUser(prev => ({ ...prev, coins: prev.coins - betAmount }));
+
+                // 2. 챌린지 풀(Pool)에 코인 추가
                 setPolls(polls.map(poll => {
                     if (poll.id === pollId) {
                         if (voteType === 'yes') {
-                            return { ...poll, yesVotes: poll.yesVotes + 1 };
+                            return { ...poll, yesPool: poll.yesPool + betAmount };
                         } else {
-                            return { ...poll, noVotes: poll.noVotes + 1 };
+                            return { ...poll, noPool: poll.noPool + betAmount };
                         }
                     }
                     return poll;
                 }));
-            };
 
-            const addComment = (pollId) => {
-                if (!commentText.trim()) return;
+                // 3. (중요) 예측 근거를 댓글로 자동 추가
+                if (reason.trim()) {
+                    const reasonText = `[${voteType.toUpperCase()} 예측 근거] ${reason}`;
+                    addComment(pollId, reasonText);
+                }
+            };
+            
+            // 댓글 추가 기능 (handleBet에서도 호출)
+            const addComment = (pollId, text) => {
+                if (!text.trim()) return;
                 
                 setPolls(polls.map(poll => {
                     if (poll.id === pollId) {
                         const newComment = {
                             id: Date.now(),
-                            author: commentAuthor || '익명',
-                            text: commentText,
+                            author: user.name, // 유저 이름으로 자동 입력
+                            text: text,
                             time: '방금 전',
                             likes: 0
                         };
@@ -144,7 +206,7 @@
                     return poll;
                 }));
                 
-                setCommentText('');
+                setCommentText(''); // 수동 댓글창 초기화
             };
 
             const likeComment = (pollId, commentId) => {
@@ -163,6 +225,7 @@
                 }));
             };
 
+            // 챌린지(Poll) 생성
             const createPoll = () => {
                 if (!newPollQuestion.trim() || !newPollEndDate) {
                     alert('질문과 종료일을 입력해주세요');
@@ -173,8 +236,8 @@
                     id: Date.now(),
                     question: newPollQuestion,
                     category: newPollCategory,
-                    yesVotes: 0,
-                    noVotes: 0,
+                    yesPool: 0, // 0 코인에서 시작
+                    noPool: 0,
                     endDate: newPollEndDate,
                     comments: []
                 };
@@ -186,15 +249,26 @@
                 setCurrentView('home');
             };
 
+            // 데일리 보너스
+            const getDailyBonus = () => {
+                // TODO: 실제로는 24시간 제한 로직 필요
+                setUser(prev => ({ ...prev, coins: prev.coins + 1000 }));
+                alert('데일리 보너스 1,000 코인 획득! 🪙');
+            };
+
+            // 뷰 라우팅
             const viewPollDetail = (poll) => {
                 setSelectedPoll(poll);
                 setCurrentView('detail');
             };
 
+            // --- 3. UI 컴포넌트 ---
+            
+            // 챌린지 카드 (홈)
             const PollCard = ({ poll }) => {
-                const totalVotes = poll.yesVotes + poll.noVotes;
-                const yesPercent = totalVotes > 0 ? (poll.yesVotes / totalVotes * 100).toFixed(1) : 50;
-                const noPercent = totalVotes > 0 ? (poll.noVotes / totalVotes * 100).toFixed(1) : 50;
+                const totalPool = poll.yesPool + poll.noPool;
+                const yesPercent = totalPool > 0 ? (poll.yesPool / totalPool * 100).toFixed(1) : 50;
+                const noPercent = totalPool > 0 ? (poll.noPool / totalPool * 100).toFixed(1) : 50;
 
                 return (
                     <div 
@@ -239,136 +313,131 @@
                         </div>
                         
                         <div className="flex items-center justify-between text-xs text-gray-500">
-                            <span>총 {totalVotes.toLocaleString()}명 참여</span>
+                            <span>총 {totalPool.toLocaleString()} 코인 참여</span>
                             <span>💬 {poll.comments.length}개 댓글</span>
                         </div>
                     </div>
                 );
             };
 
-            if (currentView === 'home') {
-                return (
-                    <div className="min-h-screen pb-20">
-                        {/* Header */}
-                        <div className="bg-white shadow-sm sticky top-0 z-10">
-                            <div className="max-w-md mx-auto px-4 py-4">
-                                <h1 className="text-2xl font-bold text-gray-800">🔮 예측마켓</h1>
-                                <p className="text-sm text-gray-600 mt-1">당신의 생각을 투표하세요</p>
-                            </div>
-                        </div>
-
-                        {/* Poll List */}
+            // 홈 화면
+            const HomeScreen = () => (
+                <div className="min-h-screen pb-20">
+                    {/* Header */}
+                    <div className="bg-white shadow-sm sticky top-0 z-10">
                         <div className="max-w-md mx-auto px-4 py-4">
-                            <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-lg font-bold text-gray-800">🔥 진행중인 투표</h2>
-                                <span className="text-sm text-gray-600">{polls.length}개</span>
+                            <div className="flex justify-between items-center">
+                                <h1 className="text-2xl font-bold text-gray-800">🔮 인사이트 마켓</h1>
+                                <div className="text-right">
+                                    <span className="font-bold text-purple-700">🪙 {user.coins.toLocaleString()}</span>
+                                    <div className="text-xs text-gray-600">{user.name}</div>
+                                </div>
                             </div>
-                            
-                            {polls.map(poll => (
-                                <PollCard key={poll.id} poll={poll} />
-                            ))}
+                            <p className="text-sm text-gray-600 mt-1">미래를 예측하고 코인을 획득하세요!</p>
+                        </div>
+                    </div>
+
+                    {/* Poll List */}
+                    <div className="max-w-md mx-auto px-4 py-4">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-lg font-bold text-gray-800">🔥 진행중인 챌린지</h2>
+                            <button 
+                                onClick={getDailyBonus}
+                                className="text-xs bg-yellow-300 text-yellow-900 font-medium px-3 py-1 rounded-full hover:bg-yellow-400"
+                            >
+                                🎁 데일리 보너스
+                            </button>
+                        </div>
+                        
+                        {polls.map(poll => (
+                            <PollCard key={poll.id} poll={poll} />
+                        ))}
+                    </div>
+                </div>
+            );
+
+            // 챌린지 생성 화면
+            const CreatePollScreen = () => (
+                <div className="min-h-screen bg-white">
+                    <div className="max-w-md mx-auto">
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-4 border-b">
+                            <div className="w-16"></div> {/* For spacing */}
+                            <h2 className="text-lg font-bold">새 챌린지 만들기</h2>
+                            <button 
+                                onClick={createPoll}
+                                className="text-purple-600 font-bold w-16 text-right"
+                            >
+                                완료
+                            </button>
                         </div>
 
-                        {/* Floating Action Button */}
-                        <button
-                            onClick={() => setCurrentView('create')}
-                            className="fixed bottom-6 right-6 w-14 h-14 btn-primary text-white rounded-full shadow-lg flex items-center justify-center text-2xl z-20"
-                        >
-                            +
-                        </button>
-                    </div>
-                );
-            }
-
-            if (currentView === 'create') {
-                return (
-                    <div className="min-h-screen bg-white">
-                        <div className="max-w-md mx-auto">
-                            {/* Header */}
-                            <div className="flex items-center justify-between p-4 border-b">
-                                <button 
-                                    onClick={() => setCurrentView('home')}
-                                    className="text-gray-600"
-                                >
-                                    ← 취소
-                                </button>
-                                <h2 className="text-lg font-bold">새 투표 만들기</h2>
-                                <button 
-                                    onClick={createPoll}
-                                    className="text-purple-600 font-bold"
-                                >
-                                    완료
-                                </button>
+                        {/* Form */}
+                        <div className="p-4 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">질문 *</label>
+                                <textarea
+                                    value={newPollQuestion}
+                                    onChange={(e) => setNewPollQuestion(e.target.value)}
+                                    placeholder="예: 2025년 비트코인 10만불 돌파할까?"
+                                    className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    rows="3"
+                                />
                             </div>
 
-                            {/* Form */}
-                            <div className="p-4 space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        질문 *
-                                    </label>
-                                    <textarea
-                                        value={newPollQuestion}
-                                        onChange={(e) => setNewPollQuestion(e.target.value)}
-                                        placeholder="예: 2025년 비트코인 10만불 돌파할까?"
-                                        className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                        rows="3"
-                                    />
-                                </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">카테고리</label>
+                                <select
+                                    value={newPollCategory}
+                                    onChange={(e) => setNewPollCategory(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                >
+                                    <option>일반</option>
+                                    <option>경제</option>
+                                    <option>스포츠</option>
+                                    <option>테크</option>
+                                    <option>부동산</option>
+                                    <option>정치</option>
+                                    <option>연예</option>
+                                </select>
+                            </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        카테고리
-                                    </label>
-                                    <select
-                                        value={newPollCategory}
-                                        onChange={(e) => setNewPollCategory(e.target.value)}
-                                        className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                    >
-                                        <option>일반</option>
-                                        <option>경제</option>
-                                        <option>스포츠</option>
-                                        <option>테크</option>
-                                        <option>부동산</option>
-                                        <option>정치</option>
-                                        <option>연예</option>
-                                    </select>
-                                </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">종료일 *</label>
+                                <input
+                                    type="date"
+                                    value={newPollEndDate}
+                                    onChange={(e) => setNewPollEndDate(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                />
+                            </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        종료일 *
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={newPollEndDate}
-                                        onChange={(e) => setNewPollEndDate(e.target.value)}
-                                        className="w-full border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                    />
-                                </div>
-
-                                <div className="bg-purple-50 rounded-lg p-4 mt-6">
-                                    <h3 className="font-bold text-purple-900 mb-2">💡 투표 작성 팁</h3>
-                                    <ul className="text-sm text-purple-800 space-y-1">
-                                        <li>• YES/NO로 답변 가능한 질문이 좋아요</li>
-                                        <li>• 명확한 기준과 기한을 설정해주세요</li>
-                                        <li>• 논쟁적이고 재미있는 주제가 인기!</li>
-                                    </ul>
-                                </div>
+                            <div className="bg-purple-50 rounded-lg p-4 mt-6">
+                                <h3 className="font-bold text-purple-900 mb-2">💡 챌린지 작성 팁</h3>
+                                <ul className="text-sm text-purple-800 space-y-1">
+                                    <li>• YES/NO로 답변 가능한 질문이 좋아요</li>
+                                    <li>• 명확한 기준과 기한을 설정해주세요</li>
+                                    <li>• 논쟁적이고 재미있는 주제가 인기!</li>
+                                </ul>
                             </div>
                         </div>
                     </div>
-                );
-            }
-
-            if (currentView === 'detail' && selectedPoll) {
+                </div>
+            );
+            
+            // 챌린지 상세 및 베팅 화면
+            const PollDetailScreen = () => {
                 const poll = polls.find(p => p.id === selectedPoll.id);
-                const totalVotes = poll.yesVotes + poll.noVotes;
-                const yesPercent = totalVotes > 0 ? (poll.yesVotes / totalVotes * 100).toFixed(1) : 50;
-                const noPercent = totalVotes > 0 ? (poll.noVotes / totalVotes * 100).toFixed(1) : 50;
+                const totalPool = poll.yesPool + poll.noPool;
+                const yesPercent = totalPool > 0 ? (poll.yesPool / totalPool * 100).toFixed(1) : 50;
+                const noPercent = totalPool > 0 ? (poll.noPool / totalPool * 100).toFixed(1) : 50;
+                
+                // 베팅 금액, 예측 근거 상태
+                const [betAmount, setBetAmount] = useState(100);
+                const [betReason, setBetReason] = useState('');
 
                 return (
-                    <div className="min-h-screen bg-gray-50">
+                    <div className="min-h-screen bg-gray-50 pb-20">
                         <div className="max-w-md mx-auto bg-white min-h-screen">
                             {/* Header */}
                             <div className="sticky top-0 bg-white border-b z-10 p-4">
@@ -393,29 +462,53 @@
                                     {poll.question}
                                 </h2>
 
-                                {/* Vote Buttons */}
-                                <div className="grid grid-cols-2 gap-3 mb-4">
-                                    <button
-                                        onClick={() => handleVote(poll.id, 'yes')}
-                                        className="bg-gradient-to-r from-green-400 to-green-500 text-white font-bold py-4 rounded-lg shadow-md hover:shadow-lg transition-all"
-                                    >
-                                        <div className="text-2xl mb-1">✅</div>
-                                        <div>YES</div>
-                                    </button>
-                                    <button
-                                        onClick={() => handleVote(poll.id, 'no')}
-                                        className="bg-gradient-to-r from-red-400 to-red-500 text-white font-bold py-4 rounded-lg shadow-md hover:shadow-lg transition-all"
-                                    >
-                                        <div className="text-2xl mb-1">❌</div>
-                                        <div>NO</div>
-                                    </button>
-                                </div>
+                                {/* --- 4. 베팅 UI (핵심 개선) --- */}
+                                <div className="bg-gray-50 rounded-lg p-4 space-y-3 mb-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">베팅할 코인</label>
+                                        <input
+                                            type="number"
+                                            value={betAmount}
+                                            onChange={(e) => setBetAmount(e.target.value)}
+                                            className="w-full border border-gray-300 rounded-lg p-2 text-center font-bold text-lg"
+                                        />
+                                        <div className="text-xs text-gray-600 text-right mt-1">
+                                            보유 코인: {user.coins.toLocaleString()} 🪙
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">예측 근거 (선택)</label>
+                                        <textarea
+                                            value={betReason}
+                                            onChange={(e) => setBetReason(e.target.value)}
+                                            placeholder="예측 근거를 공유하면 커뮤니티에 도움이 됩니다."
+                                            className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                            rows="2"
+                                        />
+                                    </div>
 
+                                    {/* Bet Buttons */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button
+                                            onClick={() => handleBet(poll.id, 'yes', betAmount, betReason)}
+                                            className="bg-gradient-to-r from-green-400 to-green-500 text-white font-bold py-3 rounded-lg shadow-md hover:shadow-lg transition-all text-sm"
+                                        >
+                                            ✅ YES에 {parseInt(betAmount || 0).toLocaleString()} 코인 예측
+                                        </button>
+                                        <button
+                                            onClick={() => handleBet(poll.id, 'no', betAmount, betReason)}
+                                            className="bg-gradient-to-r from-red-400 to-red-500 text-white font-bold py-3 rounded-lg shadow-md hover:shadow-lg transition-all text-sm"
+                                        >
+                                            ❌ NO에 {parseInt(betAmount || 0).toLocaleString()} 코인 예측
+                                        </button>
+                                    </div>
+                                </div>
+                                
                                 {/* Results */}
                                 <div className="bg-gray-50 rounded-lg p-4">
                                     <div className="flex justify-between items-center mb-3">
-                                        <span className="text-sm font-bold text-gray-700">실시간 결과</span>
-                                        <span className="text-sm text-gray-600">총 {totalVotes.toLocaleString()}명</span>
+                                        <span className="text-sm font-bold text-gray-700">실시간 예측 풀</span>
+                                        <span className="text-sm text-gray-600">총 {totalPool.toLocaleString()} 코인</span>
                                     </div>
                                     
                                     <div className="space-y-3">
@@ -430,7 +523,7 @@
                                                     style={{ width: `${yesPercent}%` }}
                                                 />
                                             </div>
-                                            <div className="text-xs text-gray-600 mt-1">{poll.yesVotes.toLocaleString()}명</div>
+                                            <div className="text-xs text-gray-600 mt-1">{poll.yesPool.toLocaleString()} 코인</div>
                                         </div>
                                         
                                         <div>
@@ -444,7 +537,7 @@
                                                     style={{ width: `${noPercent}%` }}
                                                 />
                                             </div>
-                                            <div className="text-xs text-gray-600 mt-1">{poll.noVotes.toLocaleString()}명</div>
+                                            <div className="text-xs text-gray-600 mt-1">{poll.noPool.toLocaleString()} 코인</div>
                                         </div>
                                     </div>
                                 </div>
@@ -453,27 +546,21 @@
                             {/* Comments Section */}
                             <div className="p-4">
                                 <h3 className="text-lg font-bold text-gray-800 mb-4">
-                                    💬 댓글 {poll.comments.length}
+                                    💬 근거 및 토론 {poll.comments.length}
                                 </h3>
 
-                                {/* Comment Input */}
+                                {/* Comment Input (수동 입력) */}
                                 <div className="mb-4 bg-gray-50 rounded-lg p-3">
-                                    <input
-                                        type="text"
-                                        value={commentAuthor}
-                                        onChange={(e) => setCommentAuthor(e.target.value)}
-                                        placeholder="닉네임"
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 mb-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                    />
+                                    <div className="text-sm font-medium mb-2">{user.name} (으)로 댓글 달기:</div>
                                     <textarea
                                         value={commentText}
                                         onChange={(e) => setCommentText(e.target.value)}
-                                        placeholder="댓글을 입력하세요..."
+                                        placeholder="자유로운 의견을 남겨주세요..."
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 mb-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                                         rows="2"
                                     />
                                     <button
-                                        onClick={() => addComment(poll.id)}
+                                        onClick={() => addComment(poll.id, commentText)}
                                         className="w-full btn-primary text-white font-medium py-2 rounded-lg text-sm"
                                     >
                                         댓글 작성
@@ -496,7 +583,7 @@
                                                     </span>
                                                     <span className="text-xs text-gray-500">{comment.time}</span>
                                                 </div>
-                                                <p className="text-sm text-gray-700 mb-2 leading-relaxed">
+                                                <p className="text-sm text-gray-700 mb-2 leading-relaxed whitespace-pre-wrap">
                                                     {comment.text}
                                                 </p>
                                                 <button
@@ -513,12 +600,33 @@
                         </div>
                     </div>
                 );
-            }
+            };
 
-            return null;
-        }
+            // 랭킹 (리더보드) 화면
+            const LeaderboardScreen = () => {
+                const myRank = { id: 'my', name: `${user.name} (나)`, coins: user.coins };
+                const sortedLeaderboard = [...fakeLeaderboard, myRank]
+                    .sort((a, b) => b.coins - a.coins);
+                
+                const myRankIndex = sortedLeaderboard.findIndex(u => u.id === 'my');
 
-        ReactDOM.render(<App />, document.getElementById('root'));
-    </script>
-</body>
-</html>
+                return (
+                    <div className="min-h-screen pb-20">
+                        {/* Header */}
+                        <div className="bg-white shadow-sm sticky top-0 z-10">
+                            <div className="max-w-md mx-auto px-4 py-4">
+                                <h1 className="text-2xl font-bold text-gray-800">🏆 명예의 전당</h1>
+                                <p className="text-sm text-gray-600 mt-1">최고의 예지력을 증명하세요!</p>
+                            </div>
+                        </div>
+
+                        {/* Leaderboard List */}
+                        <div className="max-w-md mx-auto px-4 py-4">
+                            {sortedLeaderboard.map((u, index) => (
+                                <div 
+                                    key={u.id}
+                                    className={`flex items-center justify-between p-4 mb-2 rounded-lg ${u.id === 'my' ? 'bg-purple-100 border-2 border-purple-500' : 'bg-white shadow-sm'}`}
+                                >
+                                    <div className="flex items-center">
+                                        <span className="text-lg font-bold w-10">
+                                            {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2
