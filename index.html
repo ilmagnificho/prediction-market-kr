@@ -51,6 +51,7 @@
             right: 0;
             max-width: 28rem; /* max-w-md */
             margin: 0 auto;
+            z-index: 50; /* 다른 요소 위에 오도록 z-index 추가 */
         }
     </style>
 </head>
@@ -115,19 +116,59 @@
             { id: 4, name: '촉이좋아', coins: 450000 },
             { id: 5, name: '미래 관찰자', coins: 210000 },
         ];
+
+        // 초기 유저 데이터
+        const initialUser = { name: '초보 예언가', coins: 10000 };
         
         // --- 1. 유저 및 재화(코인) 상태 관리 ---
         function App() {
+            
             // Polls (챌린지) 상태 관리
             const [polls, setPolls] = useState(() => {
-                const saved = localStorage.getItem('polls');
-                return saved ? JSON.parse(saved) : initialPolls;
+                // --- 🚨 A. 1차 수정 (안정성 강화) ---
+                // 로컬 스토리지 데이터가 깨지거나 (try-catch)
+                // 데이터 구조가 맞지 않으면 (hasOwnProperty)
+                // 초기 데이터를 사용하도록 수정
+                try {
+                    const saved = localStorage.getItem('polls');
+                    if (saved) {
+                        const parsedPolls = JSON.parse(saved);
+                        // 데이터가 배열이고, 첫 항목에 'yesPool' 키가 있는지 검사
+                        if (Array.isArray(parsedPolls) && parsedPolls.length > 0 && parsedPolls[0].hasOwnProperty('yesPool')) {
+                            return parsedPolls;
+                        } else if (Array.isArray(parsedPolls) && parsedPolls.length === 0) {
+                            return []; // 비어있는 것도 유효함
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed to load polls from localStorage, using initial data.", e);
+                    localStorage.removeItem('polls'); // 오류 발생 시 해당 키 삭제
+                }
+                // try가 실패하거나, 유효성 검사에 실패하면 초기 데이터 반환
+                return initialPolls;
+                // --- A. 1차 수정 끝 ---
             });
             
             // User (유저) 상태 관리
             const [user, setUser] = useState(() => {
-                const savedUser = localStorage.getItem('user');
-                return savedUser ? JSON.parse(savedUser) : { name: '초보 예언가', coins: 10000 };
+                // --- 🚨 A. 2차 수정 (안정성 강화) ---
+                // 유저 데이터도 동일하게 안정성 검사
+                try {
+                    const savedUser = localStorage.getItem('user');
+                    if (savedUser) {
+                        const parsedUser = JSON.parse(savedUser);
+                        // 'coins' 키가 있는지 검사
+                        if (parsedUser && parsedUser.hasOwnProperty('coins')) {
+                            return parsedUser;
+                        }
+                    }
+                } catch (e)
+                {
+                    console.error("Failed to load user from localStorage, using initial data.", e);
+                    localStorage.removeItem('user'); // 오류 발생 시 해당 키 삭제
+                }
+                return initialUser; // 초기 유저 데이터 반환
+                // --- A. 2차 수정 끝 ---
             });
 
             // 뷰 관리
@@ -157,8 +198,8 @@
             // '투표' 대신 '베팅' 기능
             const handleBet = (pollId, voteType, amount, reason) => {
                 const betAmount = parseInt(amount, 10);
-                if (!betAmount || betAmount <= 0) {
-                    alert('베팅할 코인 수량을 입력해주세요.');
+                if (isNaN(betAmount) || betAmount <= 0) {
+                    alert('베팅할 코인 수량을 1 이상 입력해주세요.');
                     return;
                 }
                 if (betAmount > user.coins) {
@@ -184,13 +225,19 @@
                 // 3. (중요) 예측 근거를 댓글로 자동 추가
                 if (reason.trim()) {
                     const reasonText = `[${voteType.toUpperCase()} 예측 근거] ${reason}`;
-                    addComment(pollId, reasonText);
+                    addComment(pollId, reasonText, true); // (auto=true)
                 }
+                
+                // 베팅 후 상세페이지에 머무르도록 수정 (뷰 전환 제거)
+                alert(`${betAmount.toLocaleString()} 코인 ${voteType.toUpperCase()} 예측 완료!`);
             };
             
             // 댓글 추가 기능 (handleBet에서도 호출)
-            const addComment = (pollId, text) => {
-                if (!text.trim()) return;
+            const addComment = (pollId, text, isAuto = false) => {
+                if (!text.trim()) {
+                    if(!isAuto) alert('댓글 내용을 입력해주세요.');
+                    return;
+                }
                 
                 setPolls(polls.map(poll => {
                     if (poll.id === pollId) {
@@ -322,7 +369,7 @@
 
             // 홈 화면
             const HomeScreen = () => (
-                <div className="min-h-screen pb-20">
+                <div className="min-h-screen pb-24"> {/* pb-20 -> pb-24 (하단바 고려) */}
                     {/* Header */}
                     <div className="bg-white shadow-sm sticky top-0 z-10">
                         <div className="max-w-md mx-auto px-4 py-4">
@@ -358,15 +405,15 @@
 
             // 챌린지 생성 화면
             const CreatePollScreen = () => (
-                <div className="min-h-screen bg-white">
+                <div className="min-h-screen bg-white pb-24"> {/* pb-24 추가 */}
                     <div className="max-w-md mx-auto">
                         {/* Header */}
-                        <div className="flex items-center justify-between p-4 border-b">
-                            <div className="w-16"></div> {/* For spacing */}
+                        <div className="flex items-center justify-center p-4 border-b relative">
+                            {/* <div className="w-16"></div>  */}
                             <h2 className="text-lg font-bold">새 챌린지 만들기</h2>
                             <button 
                                 onClick={createPoll}
-                                className="text-purple-600 font-bold w-16 text-right"
+                                className="text-purple-600 font-bold absolute right-4"
                             >
                                 완료
                             </button>
@@ -427,7 +474,21 @@
             
             // 챌린지 상세 및 베팅 화면
             const PollDetailScreen = () => {
+                // selectedPoll이 유효하지 않으면 렌더링 중단
+                if (!selectedPoll) {
+                    setCurrentView('home'); // 홈으로 강제 이동
+                    return null;
+                }
+
+                // polls 배열에서 최신 poll 정보를 찾음 (베팅/댓글 반영)
                 const poll = polls.find(p => p.id === selectedPoll.id);
+                
+                // 만약 poll이 삭제되거나 하면
+                if (!poll) {
+                    setCurrentView('home');
+                    return null;
+                }
+                
                 const totalPool = poll.yesPool + poll.noPool;
                 const yesPercent = totalPool > 0 ? (poll.yesPool / totalPool * 100).toFixed(1) : 50;
                 const noPercent = totalPool > 0 ? (poll.noPool / totalPool * 100).toFixed(1) : 50;
@@ -560,7 +621,7 @@
                                         rows="2"
                                     />
                                     <button
-                                        onClick={() => addComment(poll.id, commentText)}
+                                        onClick={() => addComment(poll.id, commentText, false)}
                                         className="w-full btn-primary text-white font-medium py-2 rounded-lg text-sm"
                                     >
                                         댓글 작성
@@ -611,7 +672,7 @@
                 const myRankIndex = sortedLeaderboard.findIndex(u => u.id === 'my');
 
                 return (
-                    <div className="min-h-screen pb-20">
+                    <div className="min-h-screen pb-24"> {/* pb-24 추가 */}
                         {/* Header */}
                         <div className="bg-white shadow-sm sticky top-0 z-10">
                             <div className="max-w-md mx-auto px-4 py-4">
@@ -629,4 +690,62 @@
                                 >
                                     <div className="flex items-center">
                                         <span className="text-lg font-bold w-10">
-                                            {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2
+                                            {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}`}
+                                        </span>
+                                        <span className="font-medium text-gray-800">{u.name}</span>
+                                    </div>
+                                    <span className="font-bold text-purple-700">
+                                        🪙 {u.coins.toLocaleString()}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            };
+            
+            // 하단 탭 네비게이션
+            const BottomNav = () => (
+                <div className="bottom-nav grid grid-cols-3 gap-1 bg-white shadow-inner border-t p-2">
+                    <button
+                        onClick={() => setCurrentView('home')}
+                        className={`p-2 rounded-lg flex flex-col items-center ${currentView === 'home' ? 'text-purple-600' : 'text-gray-500'}`}
+                    >
+                        <span className="text-2xl">🏠</span>
+                        <span className="text-xs font-medium">홈</span>
+                    </button>
+                    <button
+                        onClick={() => setCurrentView('leaderboard')}
+                        className={`p-2 rounded-lg flex flex-col items-center ${currentView === 'leaderboard' ? 'text-purple-600' : 'text-gray-500'}`}
+                    >
+                        <span className="text-2xl">🏆</span>
+                        <span className="text-xs font-medium">랭킹</span>
+                    </button>
+                    <button
+                        onClick={() => setCurrentView('create')}
+                        className={`p-2 rounded-lg flex flex-col items-center ${currentView === 'create' ? 'text-purple-600' : 'text-gray-500'}`}
+                    >
+                        <span className="text-2xl">✍️</span>
+                        <span className="text-xs font-medium">만들기</span>
+                    </button>
+                </div>
+            );
+
+            // --- 4. 메인 렌더링 ---
+            return (
+                <div className="max-w-md mx-auto">
+                    {currentView === 'home' && <HomeScreen />}
+                    {currentView === 'leaderboard' && <LeaderboardScreen />}
+                    {currentView === 'create' && <CreatePollScreen />}
+                    {currentView === 'detail' && <PollDetailScreen />}
+                    
+                    {/* 상세 뷰(detail)가 아닐 때만 하단 네비게이션을 보여줍니다. */}
+                    {currentView !== 'detail' && <BottomNav />}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
